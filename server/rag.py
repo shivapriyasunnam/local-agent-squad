@@ -1,6 +1,7 @@
+import io
 import os
 from dotenv import load_dotenv
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import ProgrammingError
@@ -17,6 +18,7 @@ _raw_url = os.getenv("DATABASE_URL", "postgresql://agent@localhost:5432/agentsqu
 PSYCOPG_URL = _raw_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 VECTOR_TABLE = "rag_chunks"
+EMBED_BATCH_SIZE = 10  # nomic-embed-text llama-server starts with -c 2048; batching prevents token overflow
 
 _pg_engine = PGEngine.from_connection_string(PSYCOPG_URL)
 try:
@@ -94,8 +96,42 @@ def ingest(rag_id: int, body: IngestRequest, db: Session = Depends(get_db)):
     chunks = chunk_text(body.text)
     docs = [Document(page_content=chunk, metadata={"rag_id": rag_id}) for chunk in chunks]
     store = get_vector_store()
-    store.add_documents(docs)
+    for i in range(0, len(docs), EMBED_BATCH_SIZE):
+        store.add_documents(docs[i:i + EMBED_BATCH_SIZE])
     return {"chunks_added": len(docs)}
+
+
+@router.post("/{rag_id}/ingest-file")
+def ingest_file(rag_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    rag = db.query(RAGKnowledgeBase).filter(RAGKnowledgeBase.id == rag_id).first()
+    if not rag:
+        raise HTTPException(status_code=404, detail="Knowledge base not found")
+
+    filename = file.filename or ""
+    content = file.file.read()
+
+    if filename.lower().endswith(".pdf"):
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(io.BytesIO(content))
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        except ImportError:
+            raise HTTPException(status_code=422, detail="PDF support requires pypdf: pip install pypdf")
+    else:
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=422, detail="File must be a UTF-8 text or PDF file")
+
+    if not text.strip():
+        raise HTTPException(status_code=422, detail="No text could be extracted from the file")
+
+    chunks = chunk_text(text)
+    docs = [Document(page_content=chunk, metadata={"rag_id": rag_id}) for chunk in chunks]
+    store = get_vector_store()
+    for i in range(0, len(docs), EMBED_BATCH_SIZE):
+        store.add_documents(docs[i:i + EMBED_BATCH_SIZE])
+    return {"chunks_added": len(docs), "filename": filename}
 
 
 @router.post("/{rag_id}/query")

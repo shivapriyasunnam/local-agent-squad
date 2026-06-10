@@ -1,5 +1,5 @@
 # Setup:
-# pip install fastapi uvicorn langchain-ollama sqlalchemy psycopg2-binary pgvector langchain-postgres psycopg[binary] python-dotenv
+# pip install fastapi uvicorn langchain-ollama sqlalchemy psycopg2-binary pgvector langchain-postgres psycopg[binary] python-dotenv python-multipart pypdf
 # Run: uvicorn server:app --reload --port 8000
 
 from typing import Optional

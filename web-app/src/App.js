@@ -139,6 +139,11 @@ function RagDetailView({ rag, onBack }) {
   const [results, setResults] = useState([]);
   const [ingesting, setIngesting] = useState(false);
   const [querying, setQuerying] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [fileStatus, setFileStatus] = useState('');
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef(null);
 
   const handleIngest = async () => {
     if (!ingestText.trim()) return;
@@ -162,6 +167,40 @@ function RagDetailView({ rag, onBack }) {
     } finally {
       setIngesting(false);
     }
+  };
+
+  const handleFileUpload = async () => {
+    if (!selectedFile) return;
+    setUploadingFile(true);
+    setFileStatus('');
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      const res = await fetch(`${API}/rags/${rag.id}/ingest-file`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setFileStatus(`Error: ${err.detail}`);
+      } else {
+        const data = await res.json();
+        setFileStatus(`${data.chunks_added} chunks added from ${data.filename}`);
+        setSelectedFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    } catch (e) {
+      setFileStatus('Error: could not reach the server.');
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) setSelectedFile(file);
   };
 
   const handleQuery = async () => {
@@ -199,6 +238,44 @@ function RagDetailView({ rag, onBack }) {
                 {ingesting ? 'Ingesting…' : 'Ingest'}
               </button>
               {ingestStatus && <p style={{ marginTop: 8, color: '#6b7280' }}>{ingestStatus}</p>}
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 24 }}>
+              <label style={{ fontWeight: 600 }}>Upload File</label>
+              <div
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  marginTop: 8,
+                  marginBottom: 8,
+                  border: `2px dashed ${dragOver ? '#6366f1' : '#2a2a3a'}`,
+                  borderRadius: 8,
+                  padding: '24px 16px',
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  color: dragOver ? '#6366f1' : '#6b7280',
+                  background: dragOver ? '#1e1e3a' : 'transparent',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {selectedFile
+                  ? <span style={{ color: '#e5e7eb' }}>{selectedFile.name}</span>
+                  : <span>Drop a .txt or .pdf file here, or click to browse</span>
+                }
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt,.pdf"
+                style={{ display: 'none' }}
+                onChange={e => setSelectedFile(e.target.files[0] || null)}
+              />
+              <button className="build-btn" onClick={handleFileUpload} disabled={uploadingFile || !selectedFile}>
+                {uploadingFile ? 'Uploading…' : 'Upload & Ingest'}
+              </button>
+              {fileStatus && <p style={{ marginTop: 8, color: '#6b7280' }}>{fileStatus}</p>}
             </div>
 
             <div className="form-group">
