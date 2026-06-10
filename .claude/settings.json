@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls /Applications/Docker.app 2>/dev/null && echo \"exists\" || echo \"not found\")",
+      "Read(//Applications/**)",
+      "Bash(brew install *)",
+      "Bash(brew services *)",
+      "Read(//opt/homebrew/Cellar/pgvector/0.8.2/share/**)",
+      "Read(//opt/homebrew/Cellar/pgvector/0.8.2/lib/**)",
+      "Bash(cp /opt/homebrew/Cellar/pgvector/0.8.2/share/postgresql@17/extension/* /opt/homebrew/opt/postgresql@17/share/postgresql@17/extension/)",
+      "Bash(cp /opt/homebrew/Cellar/pgvector/0.8.2/lib/postgresql@17/* /opt/homebrew/opt/postgresql@17/lib/postgresql@17/)",
+      "Read(//opt/homebrew/Cellar/postgresql@17/17.10/share/**)",
+      "Read(//opt/homebrew/Cellar/postgresql@17/17.10/lib/**)",
+      "Bash(cp /opt/homebrew/Cellar/pgvector/0.8.2/share/postgresql@17/extension/* /opt/homebrew/opt/postgresql@17/share/postgresql/extension/)",
+      "Bash(cp /opt/homebrew/Cellar/pgvector/0.8.2/lib/postgresql@17/* /opt/homebrew/opt/postgresql@17/lib/postgresql/)",
+      "Bash(python -m uvicorn server:app --port 8000)",
+      "Bash(curl -s http://localhost:8000/agents)"
+    ]
+  }
+}

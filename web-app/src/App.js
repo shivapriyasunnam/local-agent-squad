@@ -342,24 +342,64 @@ function ChatView({ agent, onBack }) {
   );
 }
 
+const API = 'http://localhost:8000';
+
+function toFrontend(agent) {
+  return {
+    id: agent.id,
+    isMultiModel: agent.is_multi_model,
+    model: agent.model,
+    models: agent.models,
+    maxTokens: agent.max_tokens,
+  };
+}
+
+function toBackend(config) {
+  return {
+    is_multi_model: config.isMultiModel,
+    model: config.model ?? null,
+    models: config.models ?? null,
+    max_tokens: config.maxTokens ? parseInt(config.maxTokens) : null,
+  };
+}
+
 function App() {
   const [showModal, setShowModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState(null);
   const [agents, setAgents] = useState([]);
   const [activeAgent, setActiveAgent] = useState(null);
 
-  const handleBuild = (config) => {
+  useEffect(() => {
+    fetch(`${API}/agents`)
+      .then(r => r.json())
+      .then(data => setAgents(data.map(toFrontend)));
+  }, []);
+
+  const handleBuild = async (config) => {
     if (editingAgent) {
-      setAgents(prev => prev.map(a => a.id === editingAgent.id ? { ...a, ...config } : a));
+      const res = await fetch(`${API}/agents/${editingAgent.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(toBackend(config)),
+      });
+      const updated = await res.json();
+      setAgents(prev => prev.map(a => a.id === editingAgent.id ? toFrontend(updated) : a));
       setEditingAgent(null);
     } else {
-      setAgents(prev => [...prev, { id: Date.now(), ...config }]);
+      const res = await fetch(`${API}/agents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(toBackend(config)),
+      });
+      const created = await res.json();
+      setAgents(prev => [...prev, toFrontend(created)]);
       setShowModal(false);
     }
   };
 
-  const handleDelete = (e, id) => {
+  const handleDelete = async (e, id) => {
     e.stopPropagation();
+    await fetch(`${API}/agents/${id}`, { method: 'DELETE' });
     setAgents(prev => prev.filter(a => a.id !== id));
   };
 
