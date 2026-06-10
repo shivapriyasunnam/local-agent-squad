@@ -14,7 +14,16 @@
       "Bash(cp /opt/homebrew/Cellar/pgvector/0.8.2/share/postgresql@17/extension/* /opt/homebrew/opt/postgresql@17/share/postgresql/extension/)",
       "Bash(cp /opt/homebrew/Cellar/pgvector/0.8.2/lib/postgresql@17/* /opt/homebrew/opt/postgresql@17/lib/postgresql/)",
       "Bash(python -m uvicorn server:app --port 8000)",
-      "Bash(curl -s http://localhost:8000/agents)"
+      "Bash(curl -s http://localhost:8000/agents)",
+      "Bash(grep -n \"def init_vectorstore_table\\\\|def _ainit_vectorstore_table\" /opt/homebrew/Caskroom/miniconda/base/lib/python3.13/site-packages/langchain_postgres/v2/engine.py | head -10)",
+      "Read(//opt/homebrew/Caskroom/miniconda/base/lib/python3.13/site-packages/langchain_postgres/v2/**)",
+      "Bash(python -c \"from sqlalchemy.exc import ProgrammingError; print\\('ok'\\)\")",
+      "Bash(pkill -f \"uvicorn server:app\")",
+      "Bash(curl -s http://localhost:8000/rags)",
+      "Bash(curl -s http://localhost:8000/rag-pairs)",
+      "Bash(curl -s -X POST http://localhost:8000/rags/1/ingest -H 'Content-Type: application/json' -d '{\"text\": \"test content for ingestion\"}')",
+      "Bash(curl -sv -X POST http://localhost:8000/rags/1/ingest -H 'Content-Type: application/json' -d '{\"text\": \"test content for ingestion\"}')",
+      "Bash(python -c ' *)"
     ]
   }
 }

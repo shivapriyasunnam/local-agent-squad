@@ -1,21 +1,24 @@
 # Setup:
-# pip install fastapi uvicorn langchain-ollama sqlalchemy psycopg2-binary pgvector langchain-postgres python-dotenv
+# pip install fastapi uvicorn langchain-ollama sqlalchemy psycopg2-binary pgvector langchain-postgres psycopg[binary] python-dotenv
 # Run: uvicorn server:app --reload --port 8000
 
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
 from sqlalchemy.orm import Session
 from langchain_ollama import ChatOllama
 from ollama._types import ResponseError
 
 from db import engine, get_db
-from models import Agent, Base
+from models import Agent, RAGKnowledgeBase, Base
+from rag import router as rag_router, pairs_router, get_vector_store
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+app.include_router(rag_router)
+app.include_router(pairs_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,6 +32,7 @@ class ChatRequest(BaseModel):
     model: str
     message: str
     max_tokens: int = 2048
+    rag_id: Optional[int] = None
 
 
 class AgentCreate(BaseModel):
@@ -36,6 +40,7 @@ class AgentCreate(BaseModel):
     model: Optional[str] = None
     models: Optional[list[str]] = None
     max_tokens: Optional[int] = None
+    rag_id: Optional[int] = None
 
 
 class AgentUpdate(BaseModel):
@@ -43,13 +48,21 @@ class AgentUpdate(BaseModel):
     model: Optional[str] = None
     models: Optional[list[str]] = None
     max_tokens: Optional[int] = None
+    rag_id: Optional[int] = None
 
 
 @app.post("/chat")
 def chat(req: ChatRequest):
     try:
+        message = req.message
+        if req.rag_id:
+            store = get_vector_store()
+            results = store.similarity_search(req.message, k=4, filter={"rag_id": req.rag_id})
+            if results:
+                context = "\n---\n".join(r.page_content for r in results)
+                message = f"Use the following context to answer the question:\n\n{context}\n\nQuestion: {req.message}"
         llm = ChatOllama(model=req.model, num_predict=req.max_tokens)
-        response = llm.invoke(req.message)
+        response = llm.invoke(message)
         return {"reply": response.content}
     except ResponseError as e:
         if e.status_code == 404:
@@ -64,6 +77,7 @@ def create_agent(body: AgentCreate, db: Session = Depends(get_db)):
         model=body.model,
         models=body.models,
         max_tokens=body.max_tokens,
+        rag_id=body.rag_id,
     )
     db.add(agent)
     db.commit()
@@ -85,6 +99,7 @@ def update_agent(agent_id: int, body: AgentUpdate, db: Session = Depends(get_db)
     agent.model = body.model
     agent.models = body.models
     agent.max_tokens = body.max_tokens
+    agent.rag_id = body.rag_id
     db.commit()
     db.refresh(agent)
     return agent

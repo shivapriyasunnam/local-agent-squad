@@ -94,22 +94,161 @@ function ModelOption({ model }) {
   );
 }
 
-function CreateAgentModal({ onClose, onBuild, initialConfig }) {
+function CreateRagModal({ onClose, onCreate }) {
+  const [name, setName] = useState('');
+  const handleCreate = async () => {
+    if (!name.trim()) return;
+    const res = await fetch(`${API}/rags`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    const created = await res.json();
+    onCreate(created);
+    onClose();
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Create Knowledge Base</h2>
+          <button className="close-btn" onClick={onClose}>✕</button>
+        </div>
+        <div className="form-group">
+          <label>Name</label>
+          <input
+            type="text"
+            className="tokens-input"
+            placeholder="e.g. Product Docs"
+            value={name}
+            onChange={e => setName(e.target.value)}
+          />
+        </div>
+        <div className="modal-footer">
+          <button className="build-btn" onClick={handleCreate}>Create</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RagDetailView({ rag, onBack }) {
+  const [ingestText, setIngestText] = useState('');
+  const [ingestStatus, setIngestStatus] = useState('');
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [ingesting, setIngesting] = useState(false);
+  const [querying, setQuerying] = useState(false);
+
+  const handleIngest = async () => {
+    if (!ingestText.trim()) return;
+    setIngesting(true);
+    try {
+      const res = await fetch(`${API}/rags/${rag.id}/ingest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: ingestText }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        setIngestStatus(`Error: ${err}`);
+      } else {
+        const data = await res.json();
+        setIngestStatus(`${data.chunks_added} chunks added`);
+        setIngestText('');
+      }
+    } catch (e) {
+      setIngestStatus(`Error: could not reach the server.`);
+    } finally {
+      setIngesting(false);
+    }
+  };
+
+  const handleQuery = async () => {
+    if (!query.trim()) return;
+    setQuerying(true);
+    const res = await fetch(`${API}/rags/${rag.id}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, k: 4 }),
+    });
+    const data = await res.json();
+    setResults(data);
+    setQuerying(false);
+  };
+
+  return (
+    <div className="chat-view">
+      <div className="chat-single">
+        <div className="chat-column">
+          <button className="back-btn chat-back-solo" onClick={onBack}>←</button>
+          <div className="chat-messages">
+            <h3 style={{ margin: '0 0 16px' }}>{rag.name}</h3>
+
+            <div className="form-group" style={{ marginBottom: 24 }}>
+              <label style={{ fontWeight: 600 }}>Ingest Text</label>
+              <textarea
+                className="chat-textarea"
+                placeholder="Paste text to add to this knowledge base…"
+                value={ingestText}
+                onChange={e => setIngestText(e.target.value)}
+                rows={5}
+                style={{ marginTop: 8, marginBottom: 8 }}
+              />
+              <button className="build-btn" onClick={handleIngest} disabled={ingesting}>
+                {ingesting ? 'Ingesting…' : 'Ingest'}
+              </button>
+              {ingestStatus && <p style={{ marginTop: 8, color: '#6b7280' }}>{ingestStatus}</p>}
+            </div>
+
+            <div className="form-group">
+              <label style={{ fontWeight: 600 }}>Query</label>
+              <input
+                type="text"
+                className="tokens-input"
+                placeholder="Ask a question to test retrieval…"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleQuery()}
+                style={{ marginTop: 8, marginBottom: 8 }}
+              />
+              <button className="build-btn" onClick={handleQuery} disabled={querying}>
+                {querying ? 'Searching…' : 'Search'}
+              </button>
+              {results.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  {results.map((r, i) => (
+                    <div key={i} className="chat-bubble assistant" style={{ marginBottom: 8 }}>
+                      {r.content}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CreateAgentModal({ onClose, onBuild, initialConfig, rags }) {
   const [selected, setSelected] = useState(initialConfig?.model || '');
   const [isOpen, setIsOpen] = useState(false);
   const [maxTokens, setMaxTokens] = useState(initialConfig?.maxTokens || '');
   const [multiModel, setMultiModel] = useState(initialConfig?.isMultiModel || false);
   const [selectedModels, setSelectedModels] = useState(initialConfig?.models || []);
   const [addModelOpen, setAddModelOpen] = useState(false);
+  const [ragId, setRagId] = useState(initialConfig?.ragId || null);
 
   const selectedModel = MODELS.find(m => m.id === selected);
   const availableToAdd = MODELS.filter(m => !selectedModels.includes(m.id));
 
   const handleBuild = () => {
     if (multiModel) {
-      onBuild({ isMultiModel: true, models: selectedModels, maxTokens });
+      onBuild({ isMultiModel: true, models: selectedModels, maxTokens, ragId });
     } else {
-      onBuild({ isMultiModel: false, model: selected, maxTokens });
+      onBuild({ isMultiModel: false, model: selected, maxTokens, ragId });
     }
     onClose();
   };
@@ -261,6 +400,7 @@ function ChatView({ agent, onBack }) {
             model: modelId,
             message: text,
             max_tokens: agent.maxTokens ? parseInt(agent.maxTokens) : 2048,
+            rag_id: agent.ragId ?? null,
           }),
         });
         const data = await res.json();
@@ -351,6 +491,7 @@ function toFrontend(agent) {
     model: agent.model,
     models: agent.models,
     maxTokens: agent.max_tokens,
+    ragId: agent.rag_id ?? null,
   };
 }
 
@@ -360,7 +501,95 @@ function toBackend(config) {
     model: config.model ?? null,
     models: config.models ?? null,
     max_tokens: config.maxTokens ? parseInt(config.maxTokens) : null,
+    rag_id: config.ragId ?? null,
   };
+}
+
+function CreateRagPairingModal({ onClose, agents, kbs, onCreated }) {
+  const [selectedAgent, setSelectedAgent] = useState(null);
+  const [selectedKb, setSelectedKb] = useState(null);
+
+  const handleCreate = async () => {
+    if (!selectedAgent || !selectedKb) return;
+    const res = await fetch(`${API}/rag-pairs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_id: selectedAgent.id, kb_id: selectedKb.id }),
+    });
+    const created = await res.json();
+    onCreated(created);
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
+        <div className="modal-header">
+          <h2>Create RAG</h2>
+          <button className="close-btn" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="form-group">
+          <label>Select Agent</label>
+          {agents.length === 0
+            ? <p style={{ color: '#6b7280', marginTop: 8 }}>No agents available. Create an agent first.</p>
+            : <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                {agents.map(a => (
+                  <div
+                    key={a.id}
+                    onClick={() => setSelectedAgent(a)}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: 8,
+                      border: `2px solid ${selectedAgent?.id === a.id ? '#6366f1' : '#2a2a3a'}`,
+                      cursor: 'pointer',
+                      background: selectedAgent?.id === a.id ? '#1e1e3a' : 'transparent',
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{a.isMultiModel ? a.models?.join(', ') : a.model}</span>
+                    {a.maxTokens && <span style={{ color: '#6b7280', marginLeft: 8 }}>{a.maxTokens} tokens</span>}
+                  </div>
+                ))}
+              </div>
+          }
+        </div>
+
+        <div className="form-group" style={{ marginTop: 16 }}>
+          <label>Select Knowledge Base</label>
+          {kbs.length === 0
+            ? <p style={{ color: '#6b7280', marginTop: 8 }}>No knowledge bases available. Create one first.</p>
+            : <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                {kbs.map(kb => (
+                  <div
+                    key={kb.id}
+                    onClick={() => setSelectedKb(kb)}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: 8,
+                      border: `2px solid ${selectedKb?.id === kb.id ? '#6366f1' : '#2a2a3a'}`,
+                      cursor: 'pointer',
+                      background: selectedKb?.id === kb.id ? '#1e1e3a' : 'transparent',
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{kb.name}</span>
+                  </div>
+                ))}
+              </div>
+          }
+        </div>
+
+        <div className="modal-footer">
+          <button
+            className="build-btn"
+            onClick={handleCreate}
+            disabled={!selectedAgent || !selectedKb}
+          >
+            Create RAG
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function App() {
@@ -368,11 +597,16 @@ function App() {
   const [editingAgent, setEditingAgent] = useState(null);
   const [agents, setAgents] = useState([]);
   const [activeAgent, setActiveAgent] = useState(null);
+  const [rags, setRags] = useState([]);
+  const [ragPairs, setRagPairs] = useState([]);
+  const [showRagModal, setShowRagModal] = useState(false);
+  const [showCreateRagModal, setShowCreateRagModal] = useState(false);
+  const [activeRag, setActiveRag] = useState(null);
 
   useEffect(() => {
-    fetch(`${API}/agents`)
-      .then(r => r.json())
-      .then(data => setAgents(data.map(toFrontend)));
+    fetch(`${API}/agents`).then(r => r.json()).then(data => setAgents(data.map(toFrontend)));
+    fetch(`${API}/rags`).then(r => r.json()).then(setRags);
+    fetch(`${API}/rag-pairs`).then(r => r.json()).then(setRagPairs);
   }, []);
 
   const handleBuild = async (config) => {
@@ -408,6 +642,23 @@ function App() {
     setEditingAgent(agent);
   };
 
+  const handleDeleteRag = async (e, id) => {
+    e.stopPropagation();
+    await fetch(`${API}/rags/${id}`, { method: 'DELETE' });
+    setRags(prev => prev.filter(r => r.id !== id));
+    setAgents(prev => prev.map(a => a.ragId === id ? { ...a, ragId: null } : a));
+  };
+
+  const handleDeleteRagPair = async (e, id) => {
+    e.stopPropagation();
+    await fetch(`${API}/rag-pairs/${id}`, { method: 'DELETE' });
+    setRagPairs(prev => prev.filter(p => p.id !== id));
+  };
+
+  if (activeRag) {
+    return <RagDetailView rag={activeRag} onBack={() => setActiveRag(null)} />;
+  }
+
   if (activeAgent) {
     return <ChatView agent={activeAgent} onBack={() => setActiveAgent(null)} />;
   }
@@ -416,11 +667,20 @@ function App() {
     <div className="App">
       <header className="app-header">
         <h1>Agent Squad</h1>
-        <button className="create-btn" onClick={() => setShowModal(true)}>
-          + Create Agent
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="create-btn" onClick={() => setShowRagModal(true)}>
+            + Create Knowledge Base
+          </button>
+          <button className="create-btn" onClick={() => setShowCreateRagModal(true)}>
+            + Create RAG
+          </button>
+          <button className="create-btn" onClick={() => setShowModal(true)}>
+            + Create Agent
+          </button>
+        </div>
       </header>
 
+      {agents.length > 0 && <div className="section-heading">Models</div>}
       <div className="agents-grid">
         {agents.map(agent => (
           <div key={agent.id} className="agent-card" onClick={() => setActiveAgent(agent)}>
@@ -430,7 +690,7 @@ function App() {
             <div className="agent-card-label">Model</div>
             <div className="agent-card-value">
               {agent.isMultiModel
-                ? (agent.models.length ? agent.models.join(', ') : '—')
+                ? (agent.models?.length ? agent.models.join(', ') : '—')
                 : (agent.model || '—')}
             </div>
             <div className="agent-card-divider" />
@@ -438,22 +698,94 @@ function App() {
             <div className="agent-card-value">{agent.maxTokens || '—'}</div>
             <div className="agent-card-divider" />
             <div className="agent-card-actions">
-              <button className="card-action-btn edit-btn" onClick={e => handleEdit(e, agent)}>
-                Edit
-              </button>
-              <button className="card-action-btn delete-btn" onClick={e => handleDelete(e, agent.id)}>
-                Delete
-              </button>
+              <button className="card-action-btn edit-btn" onClick={e => handleEdit(e, agent)}>Edit</button>
+              <button className="card-action-btn delete-btn" onClick={e => handleDelete(e, agent.id)}>Delete</button>
             </div>
           </div>
         ))}
       </div>
+
+      {ragPairs.length > 0 && (
+        <>
+        <div className="section-heading">RAGs</div>
+        <div className="agents-grid">
+          {ragPairs.map(pair => (
+            <div
+              key={pair.id}
+              className="agent-card"
+              onClick={() => setActiveAgent({
+                id: pair.agent_id,
+                isMultiModel: pair.agent.is_multi_model,
+                model: pair.agent.model,
+                models: pair.agent.models,
+                maxTokens: pair.agent.max_tokens,
+                ragId: pair.kb_id,
+              })}
+            >
+              <span className="agent-card-multi-badge">RAG</span>
+              <div className="agent-card-label">Model</div>
+              <div className="agent-card-value">
+                {pair.agent.is_multi_model
+                  ? (pair.agent.models?.join(', ') || '—')
+                  : (pair.agent.model || '—')}
+              </div>
+              <div className="agent-card-divider" />
+              <div className="agent-card-label">Knowledge Base</div>
+              <div className="agent-card-value">{pair.kb.name}</div>
+              <div className="agent-card-divider" />
+              <div className="agent-card-actions">
+                <button className="card-action-btn delete-btn" onClick={e => handleDeleteRagPair(e, pair.id)}>
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        </>
+      )}
+
+      {rags.length > 0 && (
+        <>
+        <div className="section-heading">Knowledge Bases</div>
+        <div className="agents-grid">
+          {rags.map(rag => (
+            <div key={rag.id} className="agent-card" onClick={() => setActiveRag(rag)}>
+              <div className="agent-card-label">Knowledge Base</div>
+              <div className="agent-card-value">{rag.name}</div>
+              <div className="agent-card-divider" />
+              <div className="agent-card-actions">
+                <button className="card-action-btn delete-btn" onClick={e => handleDeleteRag(e, rag.id)}>
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        </>
+      )}
+
+      {showRagModal && (
+        <CreateRagModal
+          onClose={() => setShowRagModal(false)}
+          onCreate={rag => setRags(prev => [...prev, rag])}
+        />
+      )}
+
+      {showCreateRagModal && (
+        <CreateRagPairingModal
+          onClose={() => setShowCreateRagModal(false)}
+          agents={agents}
+          kbs={rags}
+          onCreated={pair => setRagPairs(prev => [...prev, pair])}
+        />
+      )}
 
       {(showModal || editingAgent) && (
         <CreateAgentModal
           onClose={() => { setShowModal(false); setEditingAgent(null); }}
           onBuild={handleBuild}
           initialConfig={editingAgent}
+          rags={rags}
         />
       )}
     </div>

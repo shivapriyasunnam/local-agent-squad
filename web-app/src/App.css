@@ -633,12 +633,22 @@ body {
   40%            { transform: translateY(-6px); opacity: 1; }
 }
 
+/* Section headings */
+.section-heading {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7280;
+  padding: 32px 32px 0;
+}
+
 /* Agents grid */
 .agents-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
-  padding: 32px;
+  padding: 16px 32px 32px;
 }
 
 .agent-card {
